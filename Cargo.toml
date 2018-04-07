@@ -1,0 +1,7 @@
+[package]
+name = "static-server"
+version = "0.1.0"
+authors = ["wlbf <lbf1353@live.com>"]
+
+[dependencies]
+httparse = "1.2.4"
