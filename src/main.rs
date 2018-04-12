@@ -44,52 +44,10 @@ fn handle_connection(mut stream: TcpStream) {
                 println!("{:?}", path);
 
                 match (path.exists(), path.is_file(), path.is_dir()) {
-                    (true, true, false) => {
-                        let mut file = fs::File::open(path).unwrap();
-                        let metadata = file.metadata().unwrap();
-                        let length = metadata.len();
-                        let mut sent: u64 = 0;
-                        let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", length);
-                        stream.write(response.as_bytes()).unwrap();
-
-                        let mut content = [0; 1024];
-                        
-                        while sent < length {
-                            let chunk = file.read(&mut content).unwrap();
-                            stream.write(&content[..chunk]).unwrap();
-                            sent += chunk as u64;
-                        }
-                    },
-                    (true, false, true) => {
-                        let paths = fs::read_dir(path).unwrap();
-
-                        let list = paths.map(|entry| {
-                            let entry = entry.unwrap();
-                            let mut name = entry.file_name().to_string_lossy().into_owned();
-                            if entry.file_type().unwrap().is_dir() {
-                                name.push('/');
-                            }
-                            format!("<li><a href=\"{name}\">{name}</a>", name=name)
-                        }).collect::<Vec<_>>();
-
-                        let response = format!("HTTP/1.1 200 OK\r\n\r\n
-                            <html>
-                            <title>Directory listing for /</title>
-                            <body>
-                            <h2>Directory listing for /</h2>
-                            <hr>
-                            <ul>
-                            {}
-                            </ul>
-                            <hr>
-                            </body>
-                            </html>", list.join(""));
-                        stream.write(response.as_bytes()).unwrap();
-                    },
-                    (_, _, _) => {
-                        stream.write("HTTP/1.1 404 NOT FOUND\r\n\r\n".as_bytes()).unwrap();
-                    }
-                }
+                    (true, true, false) => handle_file_request(path, &mut stream),
+                    (true, false, true) => handle_dir_request(path, &mut stream),
+                    (_, _, _) => handle_not_found(&mut stream),
+                };
                 stream.flush().unwrap();
             }
             None => {
@@ -97,4 +55,52 @@ fn handle_connection(mut stream: TcpStream) {
             }
         }
     }
+}
+
+fn handle_file_request(path: PathBuf, stream: &mut TcpStream) {
+    let mut file = fs::File::open(path).unwrap();
+    let metadata = file.metadata().unwrap();
+    let length = metadata.len();
+    let mut sent: u64 = 0;
+    let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", length);
+    stream.write(response.as_bytes()).unwrap();
+
+    let mut content = [0; 1024];
+    
+    while sent < length {
+        let chunk = file.read(&mut content).unwrap();
+        stream.write(&content[..chunk]).unwrap();
+        sent += chunk as u64;
+    }
+}
+
+fn handle_dir_request(path: PathBuf, stream: &mut TcpStream) {
+    let paths = fs::read_dir(path).unwrap();
+
+    let list = paths.map(|entry| {
+        let entry = entry.unwrap();
+        let mut name = entry.file_name().to_string_lossy().into_owned();
+        if entry.file_type().unwrap().is_dir() {
+            name.push('/');
+        }
+        format!("<li><a href=\"{name}\">{name}</a>", name=name)
+    }).collect::<Vec<_>>();
+
+    let response = format!("HTTP/1.1 200 OK\r\n\r\n
+        <html>
+        <title>Directory listing for /</title>
+        <body>
+        <h2>Directory listing for /</h2>
+        <hr>
+        <ul>
+        {}
+        </ul>
+        <hr>
+        </body>
+        </html>", list.join(""));
+    stream.write(response.as_bytes()).unwrap();
+}
+
+fn handle_not_found(stream: &mut TcpStream) {
+    stream.write("HTTP/1.1 404 NOT FOUND\r\n\r\n".as_bytes()).unwrap();
 }
